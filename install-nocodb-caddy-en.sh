@@ -273,7 +273,7 @@ wait_for_nocodb() {
     elapsed=$((elapsed + READINESS_INTERVAL))
   done
 
-  stop_spinner 1 "Waiting for NocoDB to become available..."
+  stop_spinner 0 ""
   return 1
 }
 
