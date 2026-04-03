@@ -48,15 +48,28 @@ print_log_tail() {
 
 print_recent_error_context() {
   local error_summary=""
+  local daemon_error=""
 
   if [[ -n "$LOG_FILE" && -f "$LOG_FILE" ]]; then
-    error_summary="$(
+    daemon_error="$(
       tail -n 50 "$LOG_FILE" \
         | sed 's/\r$//' \
-        | grep -E '([Ee]rror|[Ff]ailed|denied|unauthorized|no space left|cannot allocate|port is already allocated)' \
-        | tail -n 5 \
+        | grep -F 'Error response from daemon:' \
+        | tail -n 1 \
         || true
     )"
+
+    error_summary="$daemon_error"
+
+    if [[ -z "$error_summary" ]]; then
+      error_summary="$(
+        tail -n 50 "$LOG_FILE" \
+          | sed 's/\r$//' \
+          | grep -E '([Ee]rror|[Ff]ailed|denied|unauthorized|no space left|cannot allocate|port is already allocated)' \
+          | tail -n 3 \
+          || true
+      )"
+    fi
 
     if [[ -n "$error_summary" ]]; then
       echo "Error details:"
