@@ -311,6 +311,7 @@ sanitize_input() {
   value="${value//$'\r'/}"
   value="${value#"${value%%[![:space:]]*}"}"
   value="${value%"${value##*[![:space:]]}"}"
+  value="$(printf '%s' "$value" | tr -cd 'A-Za-z0-9._-')"
 
   printf '%s' "$value"
 }
