@@ -8,6 +8,7 @@ LOG_FILE=""
 READINESS_TIMEOUT=60
 READINESS_INTERVAL=2
 SPINNER_PID=""
+CURRENT_INSTALL_DIR="$DEFAULT_INSTALL_DIR"
 
 has_command() {
   command -v "$1" >/dev/null 2>&1
@@ -51,6 +52,10 @@ handle_error() {
   echo "Installation failed."
   print_log_hint
   print_log_tail
+  echo
+  echo "Troubleshooting commands:"
+  echo "  ${DOCKER_CMD[*]} compose -f $CURRENT_INSTALL_DIR/docker-compose.yml ps"
+  echo "  ${DOCKER_CMD[*]} compose -f $CURRENT_INSTALL_DIR/docker-compose.yml logs --tail 100"
 }
 
 run_quiet() {
@@ -94,6 +99,7 @@ stop_spinner() {
       echo "[OK] $message"
     else
       echo "[FAIL] $message"
+      print_log_hint
     fi
   fi
 }
@@ -518,6 +524,7 @@ main() {
 
   local install_dir
   install_dir="$(prompt "Installation directory" "$DEFAULT_INSTALL_DIR")"
+  CURRENT_INSTALL_DIR="$install_dir"
 
   create_install_dir "$install_dir"
   write_compose_file "$install_dir"
