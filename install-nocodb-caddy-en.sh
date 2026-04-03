@@ -68,7 +68,7 @@ set_docker_cmd() {
 print_docker_start_hint() {
   echo "Docker is installed, but the daemon is not running or not accessible."
   if has_command systemctl; then
-    echo "Try: sudo systemctl start docker"
+    echo "Start it with: sudo systemctl start docker"
     echo "To enable autostart: sudo systemctl enable docker"
   else
     echo "Start the Docker daemon and run the script again."
