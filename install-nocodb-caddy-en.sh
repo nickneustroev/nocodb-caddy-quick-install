@@ -10,6 +10,20 @@ has_command() {
   command -v "$1" >/dev/null 2>&1
 }
 
+confirm_action() {
+  local message="$1"
+  local answer=""
+
+  while true; do
+    read -r -p "$message [y/N]: " answer
+    case "$answer" in
+      [Yy]) return 0 ;;
+      ""|[Nn]) return 1 ;;
+      *) echo "Please answer y or n." ;;
+    esac
+  done
+}
+
 init_log_file() {
   LOG_FILE="$(mktemp -t nocodb-caddy-install.XXXXXX.log)"
 }
@@ -102,6 +116,73 @@ print_docker_start_hint() {
     echo "To enable autostart: sudo systemctl enable docker"
   else
     echo "Start the Docker daemon and run the script again."
+  fi
+}
+
+get_public_ipv4() {
+  local ip=""
+  local service=""
+
+  for service in "https://api.ipify.org" "https://ipv4.icanhazip.com"; do
+    if ip="$(curl -4fsSL "$service" 2>/dev/null)"; then
+      ip="${ip//$'\r'/}"
+      ip="${ip//$'\n'/}"
+      if [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        printf '%s' "$ip"
+        return 0
+      fi
+    fi
+  done
+
+  return 1
+}
+
+resolve_domain_ipv4() {
+  local domain="$1"
+
+  if has_command dig; then
+    dig +short A "$domain" | sed '/^$/d'
+  elif has_command getent; then
+    getent ahostsv4 "$domain" | awk '{print $1}' | sort -u
+  elif has_command host; then
+    host -t A "$domain" | awk '/has address/ {print $NF}'
+  else
+    return 1
+  fi
+}
+
+confirm_domain_points_to_server() {
+  local domain="$1"
+  local server_ip=""
+  local resolved_ips=""
+
+  if ! server_ip="$(get_public_ipv4)"; then
+    echo "Warning: Could not determine the server's public IPv4 address."
+    return 0
+  fi
+
+  if ! resolved_ips="$(resolve_domain_ipv4 "$domain")"; then
+    echo "Warning: Could not resolve the domain's A record."
+    return 0
+  fi
+
+  if [[ -z "$resolved_ips" ]]; then
+    if ! confirm_action "Warning: The domain does not have an A record. Continue anyway?"; then
+      exit 1
+    fi
+    return 0
+  fi
+
+  if grep -Fxq "$server_ip" <<<"$resolved_ips"; then
+    return 0
+  fi
+
+  echo "Warning: The domain does not appear to point to this server."
+  echo "Server IPv4: $server_ip"
+  echo "Domain A records:"
+  printf '%s\n' "$resolved_ips"
+  if ! confirm_action "Continue anyway?"; then
+    exit 1
   fi
 }
 
@@ -319,11 +400,13 @@ main() {
 
   local address=""
   while true; do
-    address="$(prompt "Enter domain or subdomain")"
+    address="$(prompt "Enter domain or subdomain (example: nocodb.mysite.com)")"
     if validate_address "$address"; then
       break
     fi
   done
+
+  confirm_domain_points_to_server "$address"
 
   local install_dir
   install_dir="$(prompt "Installation directory" "$DEFAULT_INSTALL_DIR")"
