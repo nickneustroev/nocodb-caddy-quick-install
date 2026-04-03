@@ -5,7 +5,7 @@ set -euo pipefail
 DEFAULT_INSTALL_DIR="/opt/nocodb-caddy"
 DOCKER_CMD=(docker)
 LOG_FILE=""
-READINESS_TIMEOUT=60
+READINESS_TIMEOUT=120
 READINESS_INTERVAL=2
 SPINNER_PID=""
 CURRENT_INSTALL_DIR="$DEFAULT_INSTALL_DIR"
@@ -583,8 +583,8 @@ main() {
   if wait_for_nocodb "$address" "$install_dir"; then
     echo "NocoDB is now available."
   else
-    echo "Warning: NocoDB is still starting."
-    echo "Wait a little longer, then open https://$address"
+    echo "Error: NocoDB did not become available within $READINESS_TIMEOUT seconds."
+    exit 1
   fi
 
   echo
