@@ -278,6 +278,16 @@ write_root_owned_file() {
   printf '%s' "$content" | run_as_root tee "$destination" >/dev/null
 }
 
+sanitize_input() {
+  local value="$1"
+
+  value="${value//$'\r'/}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+
+  printf '%s' "$value"
+}
+
 confirm_overwrite() {
   local file_path="$1"
   local description="$2"
@@ -310,6 +320,8 @@ prompt() {
   else
     read -r -p "$message: " value
   fi
+
+  value="$(sanitize_input "$value")"
 
   printf '%s' "$value"
 }
