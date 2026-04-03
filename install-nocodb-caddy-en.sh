@@ -5,6 +5,8 @@ set -euo pipefail
 DEFAULT_INSTALL_DIR="/opt/nocodb-caddy"
 DOCKER_CMD=(docker)
 LOG_FILE=""
+READINESS_TIMEOUT=60
+READINESS_INTERVAL=2
 
 has_command() {
   command -v "$1" >/dev/null 2>&1
@@ -149,6 +151,29 @@ resolve_domain_ipv4() {
   else
     return 1
   fi
+}
+
+wait_for_nocodb() {
+  local address="$1"
+  local install_dir="$2"
+  local elapsed=0
+
+  echo "Waiting for NocoDB to become available..."
+
+  while (( elapsed < READINESS_TIMEOUT )); do
+    if curl -kfsS --connect-timeout 5 "https://$address" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    if ! docker_cli compose -f "$install_dir/docker-compose.yml" ps --status running >/dev/null 2>&1; then
+      break
+    fi
+
+    sleep "$READINESS_INTERVAL"
+    elapsed=$((elapsed + READINESS_INTERVAL))
+  done
+
+  return 1
 }
 
 confirm_domain_points_to_server() {
@@ -430,6 +455,14 @@ main() {
   echo
   echo "Starting containers..."
   run_quiet docker_cli compose -f "$install_dir/docker-compose.yml" up -d
+
+  echo
+  if wait_for_nocodb "$address" "$install_dir"; then
+    echo "NocoDB is now available."
+  else
+    echo "Warning: NocoDB is still starting."
+    echo "Wait a little longer, then open https://$address"
+  fi
 
   echo
   echo "NocoDB has been successfully installed."
