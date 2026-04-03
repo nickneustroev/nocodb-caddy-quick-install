@@ -311,6 +311,14 @@ sanitize_input() {
   value="${value//$'\r'/}"
   value="${value#"${value%%[![:space:]]*}"}"
   value="${value%"${value##*[![:space:]]}"}"
+
+  printf '%s' "$value"
+}
+
+sanitize_domain_input() {
+  local value="$1"
+
+  value="$(sanitize_input "$value")"
   value="$(printf '%s' "$value" | tr -cd 'A-Za-z0-9._-')"
 
   printf '%s' "$value"
@@ -441,6 +449,7 @@ main() {
   local address=""
   while true; do
     address="$(prompt "Enter domain or subdomain (example: nocodb.mysite.com)")"
+    address="$(sanitize_domain_input "$address")"
     if validate_address "$address" && confirm_domain_points_to_server "$address"; then
       break
     fi
