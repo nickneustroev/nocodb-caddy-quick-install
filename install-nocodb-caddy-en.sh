@@ -4,9 +4,39 @@ set -euo pipefail
 
 DEFAULT_INSTALL_DIR="/opt/nocodb-caddy"
 DOCKER_CMD=(docker)
+LOG_FILE=""
 
 has_command() {
   command -v "$1" >/dev/null 2>&1
+}
+
+init_log_file() {
+  LOG_FILE="$(mktemp -t nocodb-caddy-install.XXXXXX.log)"
+}
+
+print_log_hint() {
+  if [[ -n "$LOG_FILE" && -f "$LOG_FILE" ]]; then
+    echo "Log file: $LOG_FILE"
+  fi
+}
+
+print_log_tail() {
+  if [[ -n "$LOG_FILE" && -f "$LOG_FILE" ]]; then
+    echo
+    echo "Last log lines:"
+    tail -n 20 "$LOG_FILE" || true
+  fi
+}
+
+handle_error() {
+  echo
+  echo "Installation failed."
+  print_log_hint
+  print_log_tail
+}
+
+run_quiet() {
+  "$@" >>"$LOG_FILE" 2>&1
 }
 
 package_manager_install() {
@@ -102,8 +132,8 @@ install_docker_stack() {
   installer="$(mktemp)"
 
   echo "Installing Docker and Docker Compose plugin via get.docker.com..."
-  download_file "https://get.docker.com" "$installer"
-  run_as_root sh "$installer"
+  run_quiet download_file "https://get.docker.com" "$installer"
+  run_quiet run_as_root sh "$installer"
   rm -f "$installer"
 }
 
@@ -190,9 +220,11 @@ prompt() {
   local message="$1"
   local default_value="${2-}"
   local value=""
+  local prompt_text=""
 
   if [[ -n "$default_value" ]]; then
-    read -r -p "$message [$default_value]: " value
+    prompt_text="$message (leave blank for $default_value): "
+    read -r -p "$prompt_text" value
     value="${value:-$default_value}"
   else
     read -r -p "$message: " value
@@ -216,7 +248,7 @@ validate_address() {
   fi
 
   if [[ ! "$address" =~ $domain_regex ]]; then
-    echo "Enter a valid domain or subdomain."
+    echo "Error: The domain is not correct."
     return 1
   fi
 
@@ -287,7 +319,7 @@ main() {
 
   local address=""
   while true; do
-    address="$(prompt "NocoDB domain (domain or subdomain)")"
+    address="$(prompt "Enter domain or subdomain")"
     if validate_address "$address"; then
       break
     fi
@@ -302,16 +334,21 @@ main() {
 
   echo
   echo "Starting containers..."
-  docker_cli compose -f "$install_dir/docker-compose.yml" up -d
+  run_quiet docker_cli compose -f "$install_dir/docker-compose.yml" up -d
 
   echo
   echo "Done."
   echo "Install directory: $install_dir"
   echo "Address: $address"
   echo
+  print_log_hint
+  echo
   echo "Useful commands:"
   echo "  ${DOCKER_CMD[*]} compose -f $install_dir/docker-compose.yml ps"
   echo "  ${DOCKER_CMD[*]} compose -f $install_dir/docker-compose.yml logs -f"
 }
+
+init_log_file
+trap handle_error ERR
 
 main "$@"
