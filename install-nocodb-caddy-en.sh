@@ -46,6 +46,28 @@ print_log_tail() {
   fi
 }
 
+print_recent_error_context() {
+  local error_summary=""
+
+  if [[ -n "$LOG_FILE" && -f "$LOG_FILE" ]]; then
+    error_summary="$(
+      tail -n 50 "$LOG_FILE" \
+        | sed 's/\r$//' \
+        | grep -E '([Ee]rror|[Ff]ailed|denied|unauthorized|no space left|cannot allocate|port is already allocated)' \
+        | tail -n 5 \
+        || true
+    )"
+
+    if [[ -n "$error_summary" ]]; then
+      echo "Error details:"
+      printf '%s\n' "$error_summary"
+    else
+      echo "Recent error output:"
+      tail -n 12 "$LOG_FILE" || true
+    fi
+  fi
+}
+
 handle_error() {
   stop_spinner 1 ""
   echo
@@ -100,6 +122,7 @@ stop_spinner() {
     else
       echo "[FAIL] $message"
       print_log_hint
+      print_recent_error_context
     fi
   fi
 }
