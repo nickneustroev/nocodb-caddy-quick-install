@@ -7,6 +7,7 @@ DOCKER_CMD=(docker)
 LOG_FILE=""
 READINESS_TIMEOUT=60
 READINESS_INTERVAL=2
+SPINNER_PID=""
 
 has_command() {
   command -v "$1" >/dev/null 2>&1
@@ -45,6 +46,7 @@ print_log_tail() {
 }
 
 handle_error() {
+  stop_spinner 1 ""
   echo
   echo "Installation failed."
   print_log_hint
@@ -53,6 +55,61 @@ handle_error() {
 
 run_quiet() {
   "$@" >>"$LOG_FILE" 2>&1
+}
+
+start_spinner() {
+  local message="$1"
+
+  if [[ ! -t 1 ]]; then
+    echo "$message"
+    return
+  fi
+
+  (
+    local frames='|/-\'
+    local i=0
+    while true; do
+      printf '\r%s %s' "${frames:i++%${#frames}:1}" "$message"
+      sleep 0.1
+    done
+  ) &
+  SPINNER_PID=$!
+}
+
+stop_spinner() {
+  local exit_code="${1:-0}"
+  local message="${2-}"
+
+  if [[ -n "$SPINNER_PID" ]]; then
+    kill "$SPINNER_PID" >/dev/null 2>&1 || true
+    wait "$SPINNER_PID" 2>/dev/null || true
+    SPINNER_PID=""
+    if [[ -t 1 ]]; then
+      printf '\r\033[K'
+    fi
+  fi
+
+  if [[ -n "$message" ]]; then
+    if [[ "$exit_code" -eq 0 ]]; then
+      echo "[OK] $message"
+    else
+      echo "[FAIL] $message"
+    fi
+  fi
+}
+
+run_with_spinner() {
+  local message="$1"
+  shift
+
+  start_spinner "$message"
+  if "$@" >>"$LOG_FILE" 2>&1; then
+    stop_spinner 0 "$message"
+    return 0
+  fi
+
+  stop_spinner 1 "$message"
+  return 1
 }
 
 package_manager_install() {
@@ -158,10 +215,11 @@ wait_for_nocodb() {
   local install_dir="$2"
   local elapsed=0
 
-  echo "Waiting for NocoDB to become available..."
+  start_spinner "Waiting for NocoDB to become available..."
 
   while (( elapsed < READINESS_TIMEOUT )); do
     if curl -kfsS --connect-timeout 5 "https://$address" >/dev/null 2>&1; then
+      stop_spinner 0 "Waiting for NocoDB to become available..."
       return 0
     fi
 
@@ -173,6 +231,7 @@ wait_for_nocodb() {
     elapsed=$((elapsed + READINESS_INTERVAL))
   done
 
+  stop_spinner 1 "Waiting for NocoDB to become available..."
   return 1
 }
 
@@ -239,10 +298,11 @@ install_docker_stack() {
   local installer
   installer="$(mktemp)"
 
-  echo "Installing Docker and Docker Compose plugin via get.docker.com..."
-  run_quiet download_file "https://get.docker.com" "$installer"
-  run_quiet run_as_root sh "$installer"
+  echo "Docker was not found. Installing Docker and Docker Compose plugin..."
+  run_with_spinner "Downloading Docker installer..." download_file "https://get.docker.com" "$installer"
+  run_with_spinner "Running Docker installer..." run_as_root sh "$installer"
   rm -f "$installer"
+  echo "Docker installation completed."
 }
 
 ensure_docker_stack() {
@@ -268,6 +328,7 @@ ensure_docker_stack() {
     exit 1
   fi
 
+  echo "Checking Docker availability..."
   if ! docker_cli info >/dev/null 2>&1; then
     print_docker_start_hint
     exit 1
@@ -463,8 +524,7 @@ main() {
   write_caddyfile "$install_dir" "$address"
 
   echo
-  echo "Starting containers..."
-  run_quiet docker_cli compose -f "$install_dir/docker-compose.yml" up -d
+  run_with_spinner "Starting containers..." docker_cli compose -f "$install_dir/docker-compose.yml" up -d
 
   echo
   if wait_for_nocodb "$address" "$install_dir"; then
