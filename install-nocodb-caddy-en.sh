@@ -432,9 +432,9 @@ main() {
   run_quiet docker_cli compose -f "$install_dir/docker-compose.yml" up -d
 
   echo
-  echo "Done."
+  echo "NocoDB has been successfully installed."
   echo "Install directory: $install_dir"
-  echo "Address: $address"
+  echo "Open NocoDB: https://$address"
   echo
   print_log_hint
   echo
