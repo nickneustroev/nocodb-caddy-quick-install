@@ -193,7 +193,7 @@ confirm_domain_points_to_server() {
 
   if [[ -z "$resolved_ips" ]]; then
     if ! confirm_action "Warning: The domain does not have an A record. Continue anyway?"; then
-      exit 1
+      return 1
     fi
     return 0
   fi
@@ -207,8 +207,10 @@ confirm_domain_points_to_server() {
   echo "Domain A records:"
   printf '%s\n' "$resolved_ips"
   if ! confirm_action "Continue anyway?"; then
-    exit 1
+    return 1
   fi
+
+  return 0
 }
 
 download_file() {
@@ -438,12 +440,10 @@ main() {
   local address=""
   while true; do
     address="$(prompt "Enter domain or subdomain (example: nocodb.mysite.com)")"
-    if validate_address "$address"; then
+    if validate_address "$address" && confirm_domain_points_to_server "$address"; then
       break
     fi
   done
-
-  confirm_domain_points_to_server "$address"
 
   local install_dir
   install_dir="$(prompt "Installation directory" "$DEFAULT_INSTALL_DIR")"
