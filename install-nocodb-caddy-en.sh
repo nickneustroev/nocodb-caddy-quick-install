@@ -167,16 +167,6 @@ write_root_owned_file() {
   printf '%s' "$content" | run_as_root tee "$destination" >/dev/null
 }
 
-sanitize_input() {
-  local value="$1"
-
-  value="${value%$'\r'}"
-  value="${value#"${value%%[![:space:]]*}"}"
-  value="${value%"${value##*[![:space:]]}"}"
-
-  printf '%s' "$value"
-}
-
 confirm_overwrite() {
   local file_path="$1"
   local description="$2"
@@ -208,39 +198,25 @@ prompt() {
     read -r -p "$message: " value
   fi
 
-  value="$(sanitize_input "$value")"
-
   printf '%s' "$value"
 }
 
 validate_address() {
   local address="$1"
-  local hostname_regex='^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9])$'
+  local domain_regex='^([a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?\.[a-zA-Z]{2,}$'
 
   if [[ -z "$address" ]]; then
-    echo "Address cannot be empty."
+    echo "Domain cannot be empty."
     return 1
   fi
 
-  if [[ "$address" == http://* || "$address" == https://* || "$address" == */* || "$address" == *:* || "$address" =~ [[:space:]] ]]; then
-    echo "Use only a domain, subdomain, or IPv4 address without protocol, port, path, or spaces."
+  if [[ "$address" == *://* || "$address" == */* || "$address" == *:* || "$address" =~ [[:space:]] ]]; then
+    echo "Use only a domain or subdomain without protocol, port, path, or spaces."
     return 1
   fi
 
-  if [[ "$address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-    local octet
-    IFS='.' read -r -a octets <<<"$address"
-    for octet in "${octets[@]}"; do
-      if ((octet < 0 || octet > 255)); then
-        echo "IPv4 octets must be between 0 and 255."
-        return 1
-      fi
-    done
-    return 0
-  fi
-
-  if [[ ! "$address" =~ $hostname_regex || "$address" == -* || "$address" == *- ]]; then
-    echo "Enter a valid domain, subdomain, or IPv4 address."
+  if [[ ! "$address" =~ $domain_regex ]]; then
+    echo "Enter a valid domain or subdomain."
     return 1
   fi
 
@@ -311,7 +287,7 @@ main() {
 
   local address=""
   while true; do
-    address="$(prompt "NocoDB address (domain, subdomain, or IPv4)")"
+    address="$(prompt "NocoDB domain (domain or subdomain)")"
     if validate_address "$address"; then
       break
     fi
