@@ -314,6 +314,14 @@ confirm_domain_points_to_server() {
   return 0
 }
 
+offer_docker_login() {
+  echo
+  echo "Docker Hub login is recommended to avoid image pull rate limits."
+  if confirm_action "Log in to Docker Hub now?"; then
+    docker_cli login
+  fi
+}
+
 download_file() {
   local url="$1"
   local output_path="$2"
@@ -561,6 +569,8 @@ main() {
   local install_dir
   install_dir="$(prompt "Installation directory" "$DEFAULT_INSTALL_DIR")"
   CURRENT_INSTALL_DIR="$install_dir"
+
+  offer_docker_login
 
   create_install_dir "$install_dir"
   write_compose_file "$install_dir"
