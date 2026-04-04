@@ -81,6 +81,38 @@ print_recent_error_context() {
   fi
 }
 
+print_readiness_debug_info() {
+  local address="$1"
+  local install_dir="$2"
+
+  echo
+  echo "Readiness diagnostics:"
+
+  if [[ -f "$install_dir/docker-compose.yml" ]]; then
+    echo
+    echo "Container status:"
+    docker_cli compose -f "$install_dir/docker-compose.yml" ps || true
+
+    echo
+    echo "Recent Caddy logs:"
+    docker_cli compose -f "$install_dir/docker-compose.yml" logs --tail 50 caddy || true
+
+    echo
+    echo "Recent NocoDB logs:"
+    docker_cli compose -f "$install_dir/docker-compose.yml" logs --tail 50 nocodb || true
+  fi
+
+  if has_command curl; then
+    echo
+    echo "HTTP probe:"
+    curl -I -sS --connect-timeout 5 "http://$address" || true
+
+    echo
+    echo "HTTPS probe:"
+    curl -kI -sS --connect-timeout 5 "https://$address" || true
+  fi
+}
+
 handle_error() {
   stop_spinner 1 ""
   echo
@@ -584,6 +616,7 @@ main() {
     echo "NocoDB is now available."
   else
     echo "Error: NocoDB did not become available within $READINESS_TIMEOUT seconds."
+    print_readiness_debug_info "$address" "$install_dir"
     exit 1
   fi
 
