@@ -566,7 +566,7 @@ ensure_docker_stack() {
     exit 1
   fi
 
-  echo "Checking Docker availability..."
+  echo "Checking installed Docker availability..."
   if ! docker_cli info >/dev/null 2>&1; then
     print_docker_start_hint
     exit 1
