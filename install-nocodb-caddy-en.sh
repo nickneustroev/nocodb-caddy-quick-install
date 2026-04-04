@@ -5,7 +5,7 @@ set -euo pipefail
 DEFAULT_INSTALL_DIR="/opt/nocodb-caddy"
 DOCKER_CMD=(docker)
 LOG_FILE=""
-READINESS_TIMEOUT=120
+READINESS_TIMEOUT=60
 READINESS_INTERVAL=2
 SPINNER_PID=""
 CURRENT_INSTALL_DIR="$DEFAULT_INSTALL_DIR"
@@ -148,30 +148,15 @@ print_readiness_debug_info() {
   fi
 
   print_readiness_failure_summary "$ps_output" "$caddy_logs" "$nocodb_logs" "$http_probe" "$https_probe"
+  print_log_hint
 
-  if [[ -f "$install_dir/docker-compose.yml" ]]; then
-    echo
-    echo "Container status:"
-    printf '%s\n' "$ps_output"
-
-    echo
-    echo "Recent Caddy logs:"
-    printf '%s\n' "$caddy_logs"
-
-    echo
-    echo "Recent NocoDB logs:"
-    printf '%s\n' "$nocodb_logs"
-  fi
-
-  if has_command curl; then
-    echo
-    echo "HTTP probe:"
-    printf '%s\n' "$http_probe"
-
-    echo
-    echo "HTTPS probe:"
-    printf '%s\n' "$https_probe"
-  fi
+  echo
+  echo "Troubleshooting commands:"
+  echo "  ${DOCKER_CMD[*]} compose -f $install_dir/docker-compose.yml ps"
+  echo "  ${DOCKER_CMD[*]} compose -f $install_dir/docker-compose.yml logs --tail 100 caddy"
+  echo "  ${DOCKER_CMD[*]} compose -f $install_dir/docker-compose.yml logs --tail 100 nocodb"
+  echo "  curl -I http://$address"
+  echo "  curl -kI https://$address"
 }
 
 handle_error() {
@@ -345,17 +330,54 @@ resolve_domain_ipv4() {
   fi
 }
 
+set_wait_stage() {
+  local current_stage_var="$1"
+  local next_stage="$2"
+  local message="$3"
+  local current_stage="${!current_stage_var:-}"
+
+  if [[ "$current_stage" == "$next_stage" ]]; then
+    return
+  fi
+
+  printf -v "$current_stage_var" '%s' "$next_stage"
+  echo "  - $message"
+}
+
 wait_for_nocodb() {
   local address="$1"
   local install_dir="$2"
   local elapsed=0
+  local current_stage=""
+  local ps_output=""
+  local caddy_logs=""
+  local http_probe=""
+  local https_probe=""
 
-  start_spinner "Waiting for NocoDB to become available..."
+  echo "Waiting for NocoDB to become available..."
+  set_wait_stage current_stage "containers_starting" "Starting NocoDB and Caddy containers..."
 
   while (( elapsed < READINESS_TIMEOUT )); do
-    if curl -kfsS --connect-timeout 5 "https://$address" >/dev/null 2>&1; then
-      stop_spinner 0 "Waiting for NocoDB to become available..."
+    https_probe="$(curl -kI -sS --connect-timeout 5 "https://$address" 2>&1 || true)"
+    if grep -qE '^HTTP/' <<<"$https_probe"; then
+      echo "[OK] Waiting for NocoDB to become available..."
       return 0
+    fi
+
+    ps_output="$(docker_cli compose -f "$install_dir/docker-compose.yml" ps --all 2>&1 || true)"
+
+    if grep -Eqi '(^|[[:space:]])up([[:space:]]|$)' <<<"$ps_output"; then
+      set_wait_stage current_stage "containers_running" "Containers are running."
+    fi
+
+    http_probe="$(curl -I -sS --connect-timeout 5 "http://$address" 2>&1 || true)"
+    if grep -qE '^HTTP/' <<<"$http_probe"; then
+      set_wait_stage current_stage "http_ready" "Domain is responding over HTTP."
+    fi
+
+    caddy_logs="$(docker_cli compose -f "$install_dir/docker-compose.yml" logs --tail 20 caddy 2>&1 || true)"
+    if grep -qi 'obtaining certificate\|authorization finalized\|waiting on internal rate limiter\|rateLimited\|too many certificates' <<<"$caddy_logs$https_probe"; then
+      set_wait_stage current_stage "tls_pending" "Waiting for Caddy to provision the TLS certificate..."
     fi
 
     if ! docker_cli compose -f "$install_dir/docker-compose.yml" ps --status running >/dev/null 2>&1; then
@@ -366,7 +388,6 @@ wait_for_nocodb() {
     elapsed=$((elapsed + READINESS_INTERVAL))
   done
 
-  stop_spinner 0 ""
   return 1
 }
 
