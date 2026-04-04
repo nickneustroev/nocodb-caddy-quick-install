@@ -153,8 +153,8 @@ print_readiness_debug_info() {
   echo
   echo "Troubleshooting commands:"
   echo "  ${DOCKER_CMD[*]} compose -f $install_dir/docker-compose.yml ps"
-  echo "  ${DOCKER_CMD[*]} compose -f $install_dir/docker-compose.yml logs --tail 100 caddy"
-  echo "  ${DOCKER_CMD[*]} compose -f $install_dir/docker-compose.yml logs --tail 100 nocodb"
+  echo "  ${DOCKER_CMD[*]} compose -f $install_dir/docker-compose.yml logs --tail 50 caddy"
+  echo "  ${DOCKER_CMD[*]} compose -f $install_dir/docker-compose.yml logs --tail 50 nocodb"
   echo "  curl -I http://$address"
   echo "  curl -kI https://$address"
 }
@@ -168,7 +168,7 @@ handle_error() {
   echo
   echo "Troubleshooting commands:"
   echo "  ${DOCKER_CMD[*]} compose -f $CURRENT_INSTALL_DIR/docker-compose.yml ps"
-  echo "  ${DOCKER_CMD[*]} compose -f $CURRENT_INSTALL_DIR/docker-compose.yml logs --tail 100"
+  echo "  ${DOCKER_CMD[*]} compose -f $CURRENT_INSTALL_DIR/docker-compose.yml logs --tail 50"
 }
 
 run_quiet() {
