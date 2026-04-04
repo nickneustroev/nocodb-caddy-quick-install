@@ -397,6 +397,23 @@ print_wait_step_once() {
   echo "  - $message"
 }
 
+is_successful_http_response() {
+  local response="$1"
+  local status_code=""
+
+  status_code="$(
+    printf '%s\n' "$response" \
+      | sed -nE 's/^HTTP\/[0-9.]+ ([0-9]{3}).*/\1/p' \
+      | tail -n 1
+  )"
+
+  if [[ -z "$status_code" ]]; then
+    return 1
+  fi
+
+  [[ "$status_code" =~ ^(200|301|302|303|307|308|401|403)$ ]]
+}
+
 wait_for_nocodb() {
   local address="$1"
   local install_dir="$2"
@@ -415,7 +432,7 @@ wait_for_nocodb() {
 
   while (( elapsed < READINESS_TIMEOUT )); do
     https_probe="$(curl -kI -sS --connect-timeout 5 "https://$address" 2>&1 || true)"
-    if grep -qE '^HTTP/' <<<"$https_probe"; then
+    if is_successful_http_response "$https_probe"; then
       stop_spinner 0 "Waiting for NocoDB to become available..."
       return 0
     fi
@@ -427,7 +444,7 @@ wait_for_nocodb() {
     fi
 
     http_probe="$(curl -I -sS --connect-timeout 5 "http://$address" 2>&1 || true)"
-    if grep -qE '^HTTP/' <<<"$http_probe"; then
+    if is_successful_http_response "$http_probe"; then
       print_wait_step_once printed_http_ready "Domain is responding over HTTP."
     fi
 
