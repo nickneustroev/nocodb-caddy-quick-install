@@ -748,7 +748,7 @@ main() {
   write_caddyfile "$install_dir" "$address"
 
   echo
-  run_with_spinner "Starting containers..." docker_cli compose -f "$install_dir/docker-compose.yml" up -d
+  run_with_spinner "Starting containers..." docker_cli compose -f "$install_dir/docker-compose.yml" up -d --force-recreate
 
   echo
   if wait_for_nocodb "$address" "$install_dir"; then
