@@ -81,35 +81,96 @@ print_recent_error_context() {
   fi
 }
 
+print_readiness_failure_summary() {
+  local ps_output="$1"
+  local caddy_logs="$2"
+  local nocodb_logs="$3"
+  local http_probe="$4"
+  local https_probe="$5"
+
+  echo
+  echo "Likely cause:"
+
+  if grep -qi 'rateLimited\|too many certificates' <<<"$caddy_logs"; then
+    echo "Let's Encrypt rate limit prevented Caddy from obtaining a certificate for the configured domain."
+    return
+  fi
+
+  if grep -Eqi '(^|[[:space:]])(exited|restarting|created|dead)([[:space:]]|$)' <<<"$ps_output"; then
+    echo "One or more containers are not healthy or not running. Check the container status and logs below."
+    return
+  fi
+
+  if grep -qi 'Could not resolve host' <<<"$http_probe$https_probe"; then
+    echo "The domain could not be resolved from the server. Check the DNS records for the configured domain."
+    return
+  fi
+
+  if grep -qi 'Connection refused\|Failed to connect\|timed out' <<<"$http_probe$https_probe"; then
+    echo "The server could not reach the domain over HTTP or HTTPS. Check firewall rules, port forwarding, and whether Caddy is listening on ports 80 and 443."
+    return
+  fi
+
+  if grep -q '308 Permanent Redirect' <<<"$http_probe" && grep -qi 'tlsv1 alert\|SSL routines\|handshake failure\|no alternative certificate subject name\|certificate' <<<"$https_probe$caddy_logs"; then
+    echo "HTTP is reachable, but HTTPS/TLS is failing. Check Caddy certificate issuance and TLS configuration."
+    return
+  fi
+
+  if grep -qi 'Nest application successfully started\|App started successfully' <<<"$nocodb_logs"; then
+    echo "NocoDB started, but the public HTTPS endpoint is still unavailable. Check Caddy, TLS issuance, and external access to the domain."
+    return
+  fi
+
+  echo "The HTTPS endpoint did not become reachable within the timeout. Review the container status, probes, and logs below."
+}
+
 print_readiness_debug_info() {
   local address="$1"
   local install_dir="$2"
+  local ps_output=""
+  local caddy_logs=""
+  local nocodb_logs=""
+  local http_probe=""
+  local https_probe=""
 
   echo
   echo "Readiness diagnostics:"
 
   if [[ -f "$install_dir/docker-compose.yml" ]]; then
+    ps_output="$(docker_cli compose -f "$install_dir/docker-compose.yml" ps --all 2>&1 || true)"
+    caddy_logs="$(docker_cli compose -f "$install_dir/docker-compose.yml" logs --tail 50 caddy 2>&1 || true)"
+    nocodb_logs="$(docker_cli compose -f "$install_dir/docker-compose.yml" logs --tail 50 nocodb 2>&1 || true)"
+  fi
+
+  if has_command curl; then
+    http_probe="$(curl -I -sS --connect-timeout 5 "http://$address" 2>&1 || true)"
+    https_probe="$(curl -kI -sS --connect-timeout 5 "https://$address" 2>&1 || true)"
+  fi
+
+  print_readiness_failure_summary "$ps_output" "$caddy_logs" "$nocodb_logs" "$http_probe" "$https_probe"
+
+  if [[ -f "$install_dir/docker-compose.yml" ]]; then
     echo
     echo "Container status:"
-    docker_cli compose -f "$install_dir/docker-compose.yml" ps || true
+    printf '%s\n' "$ps_output"
 
     echo
     echo "Recent Caddy logs:"
-    docker_cli compose -f "$install_dir/docker-compose.yml" logs --tail 50 caddy || true
+    printf '%s\n' "$caddy_logs"
 
     echo
     echo "Recent NocoDB logs:"
-    docker_cli compose -f "$install_dir/docker-compose.yml" logs --tail 50 nocodb || true
+    printf '%s\n' "$nocodb_logs"
   fi
 
   if has_command curl; then
     echo
     echo "HTTP probe:"
-    curl -I -sS --connect-timeout 5 "http://$address" || true
+    printf '%s\n' "$http_probe"
 
     echo
     echo "HTTPS probe:"
-    curl -kI -sS --connect-timeout 5 "https://$address" || true
+    printf '%s\n' "$https_probe"
   fi
 }
 
