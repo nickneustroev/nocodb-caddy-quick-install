@@ -330,17 +330,15 @@ resolve_domain_ipv4() {
   fi
 }
 
-set_wait_stage() {
-  local current_stage_var="$1"
-  local next_stage="$2"
-  local message="$3"
-  local current_stage="${!current_stage_var:-}"
+print_wait_step_once() {
+  local printed_var="$1"
+  local message="$2"
 
-  if [[ "$current_stage" == "$next_stage" ]]; then
+  if [[ "${!printed_var:-false}" == "true" ]]; then
     return
   fi
 
-  printf -v "$current_stage_var" '%s' "$next_stage"
+  printf -v "$printed_var" '%s' "true"
   echo "  - $message"
 }
 
@@ -348,14 +346,17 @@ wait_for_nocodb() {
   local address="$1"
   local install_dir="$2"
   local elapsed=0
-  local current_stage=""
   local ps_output=""
   local caddy_logs=""
   local http_probe=""
   local https_probe=""
+  local printed_starting="false"
+  local printed_running="false"
+  local printed_http_ready="false"
+  local printed_tls_pending="false"
 
   echo "Waiting for NocoDB to become available..."
-  set_wait_stage current_stage "containers_starting" "Starting NocoDB and Caddy containers..."
+  print_wait_step_once printed_starting "Starting NocoDB and Caddy containers..."
 
   while (( elapsed < READINESS_TIMEOUT )); do
     https_probe="$(curl -kI -sS --connect-timeout 5 "https://$address" 2>&1 || true)"
@@ -367,17 +368,17 @@ wait_for_nocodb() {
     ps_output="$(docker_cli compose -f "$install_dir/docker-compose.yml" ps --all 2>&1 || true)"
 
     if grep -Eqi '(^|[[:space:]])up([[:space:]]|$)' <<<"$ps_output"; then
-      set_wait_stage current_stage "containers_running" "Containers are running."
+      print_wait_step_once printed_running "Containers are running."
     fi
 
     http_probe="$(curl -I -sS --connect-timeout 5 "http://$address" 2>&1 || true)"
     if grep -qE '^HTTP/' <<<"$http_probe"; then
-      set_wait_stage current_stage "http_ready" "Domain is responding over HTTP."
+      print_wait_step_once printed_http_ready "Domain is responding over HTTP."
     fi
 
     caddy_logs="$(docker_cli compose -f "$install_dir/docker-compose.yml" logs --tail 20 caddy 2>&1 || true)"
     if grep -qi 'obtaining certificate\|authorization finalized\|waiting on internal rate limiter\|rateLimited\|too many certificates' <<<"$caddy_logs$https_probe"; then
-      set_wait_stage current_stage "tls_pending" "Waiting for Caddy to provision the TLS certificate..."
+      print_wait_step_once printed_tls_pending "Waiting for Caddy to provision the TLS certificate..."
     fi
 
     if ! docker_cli compose -f "$install_dir/docker-compose.yml" ps --status running >/dev/null 2>&1; then
