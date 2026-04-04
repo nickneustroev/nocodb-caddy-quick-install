@@ -836,7 +836,6 @@ main() {
 
   echo
   echo "NocoDB has been successfully installed."
-  echo "Install directory: $install_dir"
   echo "Open NocoDB: https://$address"
   echo
   print_log_hint
