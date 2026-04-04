@@ -339,6 +339,9 @@ print_wait_step_once() {
   fi
 
   printf -v "$printed_var" '%s' "true"
+  if [[ -n "$SPINNER_PID" && -t 1 ]]; then
+    printf '\r\033[K'
+  fi
   echo "  - $message"
 }
 
@@ -355,13 +358,13 @@ wait_for_nocodb() {
   local printed_http_ready="false"
   local printed_tls_pending="false"
 
-  echo "Waiting for NocoDB to become available..."
+  start_spinner "Waiting for NocoDB to become available..."
   print_wait_step_once printed_starting "Starting NocoDB and Caddy containers..."
 
   while (( elapsed < READINESS_TIMEOUT )); do
     https_probe="$(curl -kI -sS --connect-timeout 5 "https://$address" 2>&1 || true)"
     if grep -qE '^HTTP/' <<<"$https_probe"; then
-      echo "[OK] Waiting for NocoDB to become available..."
+      stop_spinner 0 "Waiting for NocoDB to become available..."
       return 0
     fi
 
@@ -389,6 +392,7 @@ wait_for_nocodb() {
     elapsed=$((elapsed + READINESS_INTERVAL))
   done
 
+  stop_spinner 0 ""
   return 1
 }
 
