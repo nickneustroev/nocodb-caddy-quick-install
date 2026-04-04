@@ -673,7 +673,7 @@ prompt_existing_install_action() {
       [Rr]) printf 'reconfigure'; return 0 ;;
       [Ss]) printf 'restart'; return 0 ;;
       ""|[Ee]) printf 'exit'; return 0 ;;
-      *) echo "Please answer R, S, or E." ;;
+      *) echo "Please answer R, S, or E." >&2 ;;
     esac
   done
 }
