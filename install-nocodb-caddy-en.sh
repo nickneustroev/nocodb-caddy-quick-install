@@ -661,6 +661,23 @@ prompt() {
   printf '%s' "$value"
 }
 
+prompt_existing_install_action() {
+  local install_dir="$1"
+  local answer=""
+
+  echo "Existing installation detected at $install_dir."
+
+  while true; do
+    read -r -p "Choose action: [R]econfigure, [S]tart/restart, or [E]xit: " answer
+    case "$answer" in
+      [Rr]) printf 'reconfigure'; return 0 ;;
+      [Ss]) printf 'restart'; return 0 ;;
+      ""|[Ee]) printf 'exit'; return 0 ;;
+      *) echo "Please answer R, S, or E." ;;
+    esac
+  done
+}
+
 validate_address() {
   local address="$1"
   local domain_regex='^([a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?\.[a-zA-Z]{2,}$'
@@ -681,6 +698,22 @@ validate_address() {
   fi
 
   return 0
+}
+
+is_existing_installation() {
+  local install_dir="$1"
+
+  [[ -f "$install_dir/docker-compose.yml" && -f "$install_dir/Caddyfile" ]]
+}
+
+get_configured_address() {
+  local install_dir="$1"
+
+  if [[ ! -f "$install_dir/Caddyfile" ]]; then
+    return 1
+  fi
+
+  sed -nE '1s/^[[:space:]]*([^[:space:]{]+)[[:space:]]*\{[[:space:]]*$/\1/p' "$install_dir/Caddyfile" | head -n 1
 }
 
 write_compose_file() {
@@ -745,24 +778,49 @@ main() {
   echo "NocoDB + Caddy installer"
   echo
 
-  local address=""
-  while true; do
-    address="$(prompt "Enter domain or subdomain (example: nocodb.mysite.com)")"
-    address="$(sanitize_domain_input "$address")"
-    if validate_address "$address" && confirm_domain_points_to_server "$address"; then
-      break
-    fi
-  done
-
   local install_dir
   install_dir="$(prompt "Installation directory" "$DEFAULT_INSTALL_DIR")"
   CURRENT_INSTALL_DIR="$install_dir"
 
-  offer_docker_login
+  local action="install"
+  local address=""
+
+  if is_existing_installation "$install_dir"; then
+    action="$(prompt_existing_install_action "$install_dir")"
+  fi
+
+  if [[ "$action" == "exit" ]]; then
+    echo "Nothing to do."
+    exit 0
+  fi
+
+  if [[ "$action" == "restart" ]]; then
+    address="$(get_configured_address "$install_dir" || true)"
+    if [[ -z "$address" ]]; then
+      echo "Could not determine the configured domain from $install_dir/Caddyfile."
+      echo "Use reconfigure mode to set the domain again."
+      exit 1
+    fi
+  else
+    while true; do
+      address="$(prompt "Enter domain or subdomain (example: nocodb.mysite.com)")"
+      address="$(sanitize_domain_input "$address")"
+      if validate_address "$address" && confirm_domain_points_to_server "$address"; then
+        break
+      fi
+    done
+  fi
+
+  if [[ "$action" != "restart" ]]; then
+    offer_docker_login
+  fi
 
   create_install_dir "$install_dir"
-  write_compose_file "$install_dir"
-  write_caddyfile "$install_dir" "$address"
+
+  if [[ "$action" == "reconfigure" || "$action" == "install" ]]; then
+    write_compose_file "$install_dir"
+    write_caddyfile "$install_dir" "$address"
+  fi
 
   echo
   run_with_spinner "Starting containers..." docker_cli compose -f "$install_dir/docker-compose.yml" up -d --force-recreate
