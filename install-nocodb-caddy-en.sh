@@ -665,7 +665,7 @@ prompt_existing_install_action() {
   local install_dir="$1"
   local answer=""
 
-  echo "NocoDB is already installed at $install_dir."
+  echo "NocoDB is already installed at $install_dir." >&2
 
   while true; do
     read -r -p "Choose action: [R]econfigure, [S]tart/restart, or [E]xit: " answer
