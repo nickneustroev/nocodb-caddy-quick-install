@@ -316,18 +316,70 @@ get_public_ipv4() {
   return 1
 }
 
-resolve_domain_ipv4() {
+resolve_domain_ipv4_public() {
   local domain="$1"
+  local resolved_ips=""
+  local response=""
+  local resolver=""
 
   if has_command dig; then
-    dig +short A "$domain" | sed '/^$/d'
-  elif has_command getent; then
+    for resolver in "1.1.1.1" "8.8.8.8"; do
+      resolved_ips="$(
+        dig @"$resolver" +short A "$domain" 2>/dev/null | sed '/^$/d' || true
+      )"
+      if [[ -n "$resolved_ips" ]]; then
+        printf '%s\n' "$resolved_ips" | sort -u
+        return 0
+      fi
+    done
+  fi
+
+  if has_command curl; then
+    for resolver in \
+      "https://dns.google/resolve?name=$domain&type=A" \
+      "https://cloudflare-dns.com/dns-query?name=$domain&type=A"
+    do
+      if response="$(curl -fsSL -H 'accept: application/dns-json' "$resolver" 2>/dev/null)"; then
+        resolved_ips="$(
+          printf '%s' "$response" \
+            | grep -oE '"data":"([0-9]{1,3}\.){3}[0-9]{1,3}"' \
+            | sed -E 's/^"data":"//; s/"$//' \
+            | sort -u \
+            || true
+        )"
+        if [[ -n "$resolved_ips" ]]; then
+          printf '%s\n' "$resolved_ips"
+          return 0
+        fi
+      fi
+    done
+  fi
+
+  return 1
+}
+
+resolve_domain_ipv4_local() {
+  local domain="$1"
+
+  if has_command getent; then
     getent ahostsv4 "$domain" | awk '{print $1}' | sort -u
+  elif has_command dig; then
+    dig +short A "$domain" | sed '/^$/d'
   elif has_command host; then
     host -t A "$domain" | awk '/has address/ {print $NF}'
   else
     return 1
   fi
+}
+
+resolve_domain_ipv4() {
+  local domain="$1"
+
+  if resolve_domain_ipv4_public "$domain"; then
+    return 0
+  fi
+
+  resolve_domain_ipv4_local "$domain"
 }
 
 print_wait_step_once() {
