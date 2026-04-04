@@ -669,6 +669,7 @@ prompt_existing_install_action() {
 
   while true; do
     read -r -p "Choose action: [R]econfigure, [S]tart/restart, or [E]xit: " answer
+    answer="$(sanitize_input "$answer")"
     case "$answer" in
       [Rr]) printf 'reconfigure'; return 0 ;;
       [Ss]) printf 'restart'; return 0 ;;
